@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { AlertCircle, Calculator, Eye, EyeOff, ImagePlus, Clock3, Ruler, PackageCheck, Wallet } from 'lucide-react';
 import type { BomMetadata } from '@/types';
 
@@ -9,6 +9,7 @@ interface BomConfigHeaderProps {
   onChange: (meta: Partial<BomMetadata>) => void;
   onSave?: () => void;
   onHitungBom?: () => void;
+  saveValidationToken?: number;
 }
 
 const INPUT_COMPACT =
@@ -58,12 +59,35 @@ function validateMetadata(meta: BomMetadata): { valid: boolean; errors: string[]
   return { valid: errors.length === 0, errors };
 }
 
-export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHeaderProps) {
+function getFieldErrors(meta: BomMetadata): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!meta.productCode?.trim()) errors.productCode = 'Field ini wajib diisi';
+  if (!meta.productName?.trim()) errors.productName = 'Field ini wajib diisi';
+  if (!meta.itemType?.trim()) errors.itemType = 'Field ini wajib dipilih';
+  if (!meta.productType?.trim()) errors.productType = 'Field ini wajib dipilih';
+  if (!meta.customer?.trim()) errors.customer = 'Field ini wajib diisi';
+  if (!meta.buyerCode?.trim()) errors.buyerCode = 'Field ini wajib diisi';
+  if (!meta.leadTime?.trim()) errors.leadTime = 'Field ini wajib diisi';
+  if ((parseFloat(meta.bomQuantity || '0') || 0) <= 0) errors.bomQuantity = 'Nilai harus lebih dari 0';
+  if ((parseFloat(meta.itemWidth || '0') || 0) <= 0) errors.itemWidth = 'Nilai harus lebih dari 0';
+  if ((parseFloat(meta.itemDepth || '0') || 0) <= 0) errors.itemDepth = 'Nilai harus lebih dari 0';
+  if ((parseFloat(meta.itemHeight || '0') || 0) <= 0) errors.itemHeight = 'Nilai harus lebih dari 0';
+  if (meta.effectiveDate && meta.expiryDate) {
+    const effDate = new Date(meta.effectiveDate);
+    const expDate = new Date(meta.expiryDate);
+    if (expDate <= effDate) errors.expiryDate = 'Expiry Date harus lebih besar dari Effective Date';
+  }
+  return errors;
+}
+
+export function BomConfigHeader({ metadata, onChange, onHitungBom, saveValidationToken = 0 }: BomConfigHeaderProps) {
   const [showDetailFields, setShowDetailFields] = useState(false);
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const currency = metadata?.currency ?? 'IDR';
   const validation = validateMetadata(metadata);
+  const fieldErrors = useMemo(() => getFieldErrors(metadata), [metadata]);
   const isValid = validation.valid;
   const isExpired = Boolean(metadata?.expiryDate && new Date(metadata.expiryDate) < new Date());
   const productImageUrl = typeof metadata?.productImageUrl === 'string' ? metadata.productImageUrl : '';
@@ -88,6 +112,40 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
     reader.readAsDataURL(file);
     event.target.value = '';
   };
+
+  const getFieldId = (field: string) => `bom-field-${field}`;
+  const getInputClass = (field: string, base: string) =>
+    `${base} ${showFieldErrors && fieldErrors[field] ? 'border-red-400 focus:border-red-500 focus:ring-red-100' : ''}`;
+  const renderFieldError = (field: string) =>
+    showFieldErrors && fieldErrors[field] ? <p className="mt-0.5 text-[10px] text-red-600">{fieldErrors[field]}</p> : null;
+
+  useEffect(() => {
+    if (!saveValidationToken) return;
+    setShowFieldErrors(true);
+    if (Object.keys(fieldErrors).length === 0) return;
+    setShowDetailFields(true);
+    const order = [
+      'productCode',
+      'productName',
+      'itemType',
+      'productType',
+      'bomQuantity',
+      'customer',
+      'buyerCode',
+      'itemWidth',
+      'itemDepth',
+      'itemHeight',
+      'leadTime',
+      'expiryDate',
+    ];
+    const firstField = order.find((field) => fieldErrors[field]);
+    if (!firstField) return;
+    requestAnimationFrame(() => {
+      const target = document.getElementById(getFieldId(firstField));
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      (target as HTMLInputElement | null)?.focus?.();
+    });
+  }, [fieldErrors, saveValidationToken]);
 
   return (
     <div className="flex-shrink-0 border-b border-slate-200 bg-white shadow-sm">
@@ -209,6 +267,24 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                   {validation.errors.length} field wajib belum terisi.
                 </div>
                 {!showDetailFields && <div>Buka "Tampilkan Field" untuk melengkapi data.</div>}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {Object.entries(fieldErrors).map(([field, message]) => (
+                    <button
+                      key={field}
+                      type="button"
+                      onClick={() => {
+                        setShowDetailFields(true);
+                        setShowFieldErrors(true);
+                        const target = document.getElementById(getFieldId(field));
+                        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        (target as HTMLInputElement | null)?.focus?.();
+                      }}
+                      className="rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] text-amber-900 hover:bg-amber-100"
+                    >
+                      {message}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -222,29 +298,34 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Kode *</label>
                   <input
+                    id={getFieldId('productCode')}
                     type="text"
                     value={metadata?.productCode ?? ''}
                     onChange={(e) => handleChange('productCode', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('productCode', INPUT_COMPACT)}
                     placeholder="MB-001"
                   />
+                  {renderFieldError('productCode')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Nama *</label>
                   <input
+                    id={getFieldId('productName')}
                     type="text"
                     value={metadata?.productName ?? ''}
                     onChange={(e) => handleChange('productName', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('productName', INPUT_COMPACT)}
                     placeholder="MEJA MAKAN"
                   />
+                  {renderFieldError('productName')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Tipe Item *</label>
                   <select
+                    id={getFieldId('itemType')}
                     value={metadata?.itemType ?? ''}
                     onChange={(e) => handleChange('itemType', e.target.value)}
-                    className={SELECT_COMPACT}
+                    className={getInputClass('itemType', SELECT_COMPACT)}
                   >
                     {ITEM_TYPES.map((item) => (
                       <option key={item} value={item}>
@@ -252,13 +333,15 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                       </option>
                     ))}
                   </select>
+                  {renderFieldError('itemType')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Tipe Produk *</label>
                   <select
+                    id={getFieldId('productType')}
                     value={metadata?.productType ?? 'Standard'}
                     onChange={(e) => handleChange('productType', e.target.value)}
-                    className={SELECT_COMPACT}
+                    className={getInputClass('productType', SELECT_COMPACT)}
                   >
                     {PRODUCT_TYPES.map((item) => (
                       <option key={item} value={item}>
@@ -266,6 +349,7 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                       </option>
                     ))}
                   </select>
+                  {renderFieldError('productType')}
                 </div>
               </div>
             </div>
@@ -276,12 +360,14 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Qty *</label>
                   <input
+                    id={getFieldId('bomQuantity')}
                     type="number"
                     min={1}
                     value={metadata?.bomQuantity ?? '1'}
                     onChange={(e) => handleChange('bomQuantity', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('bomQuantity', INPUT_COMPACT)}
                   />
+                  {renderFieldError('bomQuantity')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Uang</label>
@@ -325,22 +411,26 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Customer *</label>
                   <input
+                    id={getFieldId('customer')}
                     type="text"
                     value={metadata?.customer ?? ''}
                     onChange={(e) => handleChange('customer', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('customer', INPUT_COMPACT)}
                     placeholder="PT ABC"
                   />
+                  {renderFieldError('customer')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Buyer *</label>
                   <input
+                    id={getFieldId('buyerCode')}
                     type="text"
                     value={metadata?.buyerCode ?? ''}
                     onChange={(e) => handleChange('buyerCode', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('buyerCode', INPUT_COMPACT)}
                     placeholder="BYR-001"
                   />
+                  {renderFieldError('buyerCode')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Coating</label>
@@ -361,32 +451,38 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">W</label>
                   <input
+                    id={getFieldId('itemWidth')}
                     type="number"
                     value={metadata?.itemWidth ?? ''}
                     onChange={(e) => handleChange('itemWidth', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('itemWidth', INPUT_COMPACT)}
                     placeholder="1200"
                   />
+                  {renderFieldError('itemWidth')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">D</label>
                   <input
+                    id={getFieldId('itemDepth')}
                     type="number"
                     value={metadata?.itemDepth ?? ''}
                     onChange={(e) => handleChange('itemDepth', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('itemDepth', INPUT_COMPACT)}
                     placeholder="600"
                   />
+                  {renderFieldError('itemDepth')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">H</label>
                   <input
+                    id={getFieldId('itemHeight')}
                     type="number"
                     value={metadata?.itemHeight ?? ''}
                     onChange={(e) => handleChange('itemHeight', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('itemHeight', INPUT_COMPACT)}
                     placeholder="750"
                   />
+                  {renderFieldError('itemHeight')}
                 </div>
               </div>
             </div>
@@ -397,13 +493,15 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Lead Time (Hari) *</label>
                   <input
+                    id={getFieldId('leadTime')}
                     type="number"
                     min="0"
                     value={metadata?.leadTime ?? ''}
                     onChange={(e) => handleChange('leadTime', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('leadTime', INPUT_COMPACT)}
                     placeholder="7"
                   />
+                  {renderFieldError('leadTime')}
                 </div>
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Efektif</label>
@@ -417,11 +515,13 @@ export function BomConfigHeader({ metadata, onChange, onHitungBom }: BomConfigHe
                 <div>
                   <label className="text-[9px] font-semibold uppercase text-slate-600">Expired</label>
                   <input
+                    id={getFieldId('expiryDate')}
                     type="date"
                     value={metadata?.expiryDate ?? ''}
                     onChange={(e) => handleChange('expiryDate', e.target.value)}
-                    className={INPUT_COMPACT}
+                    className={getInputClass('expiryDate', INPUT_COMPACT)}
                   />
+                  {renderFieldError('expiryDate')}
                 </div>
               </div>
             </div>

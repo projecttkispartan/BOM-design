@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Copy,
   Filter,
   Plus,
@@ -35,6 +38,8 @@ function nextBomCode(items: BomListItem[]): string {
   return `BOM-${String(max + 1).padStart(3, '0')}`;
 }
 
+type SortKey = 'name' | 'code' | 'productType' | 'status' | 'usedInWo' | 'expiryState' | 'needsReview' | 'grandTotal' | 'updatedAt';
+
 export default function BomListPage() {
   const router = useRouter();
   const [items, setItems] = useState<BomListItem[]>([]);
@@ -49,13 +54,23 @@ export default function BomListPage() {
   const [newBomOpen, setNewBomOpen] = useState(false);
   const [newBomName, setNewBomName] = useState('');
   const [newBomCode, setNewBomCode] = useState('');
+  const [newBomNameError, setNewBomNameError] = useState('');
   const [woUsage, setWoUsage] = useState<Record<string, { count: number; loading: boolean }>>({});
+  const [deleteTarget, setDeleteTarget] = useState<BomListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [slowLoading, setSlowLoading] = useState(false);
+  const [sortBy, setSortBy] = useState<SortKey>('updatedAt');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const newBomRef = useRef<HTMLDivElement>(null);
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchList = useCallback(
     async (overrides: Partial<BomFilters> = {}) => {
       setLoading(true);
+      setSlowLoading(false);
       setError(null);
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+      loadingTimerRef.current = setTimeout(() => setSlowLoading(true), 5000);
       try {
         const filters: BomFilters = {
           q: search.trim() || undefined,
@@ -72,6 +87,10 @@ export default function BomListPage() {
         setError(fetchError instanceof Error ? fetchError.message : 'Gagal memuat data BOM');
       } finally {
         setLoading(false);
+        if (loadingTimerRef.current) {
+          clearTimeout(loadingTimerRef.current);
+          loadingTimerRef.current = null;
+        }
       }
     },
     [filterExpiryState, filterNeedsReview, filterProductType, filterStatus, search],
@@ -95,6 +114,13 @@ export default function BomListPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchList, search, filterStatus, filterProductType, filterExpiryState, filterNeedsReview]);
+
+  useEffect(
+    () => () => {
+      if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!newBomOpen) return;
@@ -139,10 +165,66 @@ export default function BomListPage() {
     };
   }, [items]);
 
+  const sortedItems = useMemo(() => {
+    const data = [...items];
+    data.sort((a, b) => {
+      const dir = sortDirection === 'asc' ? 1 : -1;
+      const usageA = woUsage[a.id]?.count || 0;
+      const usageB = woUsage[b.id]?.count || 0;
+      const valueA: string | number = (() => {
+        if (sortBy === 'name') return a.name.toLowerCase();
+        if (sortBy === 'code') return a.code.toLowerCase();
+        if (sortBy === 'productType') return a.productType.toLowerCase();
+        if (sortBy === 'status') return a.status.toLowerCase();
+        if (sortBy === 'usedInWo') return usageA;
+        if (sortBy === 'expiryState') return a.expiryState.toLowerCase();
+        if (sortBy === 'needsReview') return a.needsReview.length;
+        if (sortBy === 'grandTotal') return a.costSummary.grandTotal;
+        return a.updatedAt;
+      })();
+      const valueB: string | number = (() => {
+        if (sortBy === 'name') return b.name.toLowerCase();
+        if (sortBy === 'code') return b.code.toLowerCase();
+        if (sortBy === 'productType') return b.productType.toLowerCase();
+        if (sortBy === 'status') return b.status.toLowerCase();
+        if (sortBy === 'usedInWo') return usageB;
+        if (sortBy === 'expiryState') return b.expiryState.toLowerCase();
+        if (sortBy === 'needsReview') return b.needsReview.length;
+        if (sortBy === 'grandTotal') return b.costSummary.grandTotal;
+        return b.updatedAt;
+      })();
+      if (typeof valueA === 'number' && typeof valueB === 'number') {
+        return dir * (valueA - valueB);
+      }
+      return dir * String(valueA).localeCompare(String(valueB), undefined, { numeric: true });
+    });
+    return data;
+  }, [items, sortBy, sortDirection, woUsage]);
+
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortBy((prevKey) => {
+      if (prevKey === key) {
+        setSortDirection((prevDirection) => (prevDirection === 'asc' ? 'desc' : 'asc'));
+        return prevKey;
+      }
+      setSortDirection(key === 'updatedAt' ? 'desc' : 'asc');
+      return key;
+    });
+  }, []);
+
+  const renderSortIcon = (key: SortKey) => {
+    if (sortBy !== key) return <ArrowUpDown className="h-3 w-3 text-slate-400" />;
+    if (sortDirection === 'asc') return <ArrowUp className="h-3 w-3 text-sky-600" />;
+    return <ArrowDown className="h-3 w-3 text-sky-600" />;
+  };
+
   const createBom = useCallback(async () => {
     const name = newBomName.trim();
     const code = (newBomCode || nextBomCode(items)).trim();
-    if (!name) return;
+    if (name.length < 3) {
+      setNewBomNameError('Nama produk wajib diisi minimal 3 karakter');
+      return;
+    }
     try {
       const created = await bomApiClient.createBom({
         code,
@@ -158,6 +240,7 @@ export default function BomListPage() {
       });
       setNewBomOpen(false);
       setNewBomName('');
+      setNewBomNameError('');
       router.push(`/bom/${created.id}`);
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Gagal membuat BOM');
@@ -195,23 +278,35 @@ export default function BomListPage() {
     [router],
   );
 
-  const deleteBom = useCallback(
-    async (item: BomListItem) => {
-      const usage = woUsage[item.id]?.count || 0;
-      const warning =
-        usage > 0
-          ? `BOM ini dipakai di ${usage} WO. Hapus tetap (force delete)?`
-          : `Hapus BOM ${item.code} - ${item.name}?`;
-      if (!window.confirm(warning)) return;
-      try {
-        await bomApiClient.deleteBom(item.id, { force: usage > 0 });
-        await fetchList();
-      } catch (deleteError) {
-        setError(deleteError instanceof Error ? deleteError.message : 'Gagal menghapus BOM');
-      }
-    },
-    [fetchList, woUsage],
-  );
+  const requestDeleteBom = useCallback((item: BomListItem) => {
+    setDeleteTarget(item);
+  }, []);
+
+  const confirmDeleteBom = useCallback(async () => {
+    if (!deleteTarget) return;
+    const usage = woUsage[deleteTarget.id]?.count || 0;
+    const previousItems = items;
+    const nextItems = items.filter((item) => item.id !== deleteTarget.id);
+    setDeleting(true);
+    setDeleteTarget(null);
+    setItems(nextItems);
+    setNewBomCode(nextBomCode(nextItems));
+    setWoUsage((prev) => {
+      const next = { ...prev };
+      delete next[deleteTarget.id];
+      return next;
+    });
+    try {
+      await bomApiClient.deleteBom(deleteTarget.id, { force: usage > 0 });
+      await fetchList();
+    } catch (deleteError) {
+      setItems(previousItems);
+      setNewBomCode(nextBomCode(previousItems));
+      setError(deleteError instanceof Error ? deleteError.message : 'Gagal menghapus BOM');
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, fetchList, items, woUsage]);
 
   const hasActiveFilters = Boolean(filterStatus || filterProductType || filterExpiryState || filterNeedsReview);
 
@@ -221,7 +316,11 @@ export default function BomListPage() {
         <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-slate-900">Daftar Bill of Materials</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Frontend-only (localStorage) sebagai source of truth</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {process.env.NODE_ENV === 'development'
+                ? 'Frontend-only (localStorage) sebagai source of truth'
+                : 'Sistem Kalkulasi Bill of Materials - v1.0'}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <a
@@ -234,7 +333,13 @@ export default function BomListPage() {
             <div className="relative" ref={newBomRef}>
               <button
                 type="button"
-                onClick={() => setNewBomOpen((value) => !value)}
+                onClick={() =>
+                  setNewBomOpen((value) => {
+                    const next = !value;
+                    if (next) setNewBomNameError('');
+                    return next;
+                  })
+                }
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-sky-600 hover:bg-sky-700 transition-colors shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -254,19 +359,28 @@ export default function BomListPage() {
                     <input
                       type="text"
                       value={newBomName}
-                      onChange={(event) => setNewBomName(event.target.value)}
+                      onChange={(event) => {
+                        setNewBomName(event.target.value);
+                        if (newBomNameError) setNewBomNameError('');
+                      }}
                       placeholder="Nama produk"
-                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 text-sm placeholder-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:outline-none"
+                      className={`w-full px-3 py-2 rounded-lg bg-white border text-slate-900 text-sm placeholder-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 focus:outline-none ${
+                        newBomNameError ? 'border-red-400' : 'border-slate-300'
+                      }`}
                       autoFocus
                       onKeyDown={(event) => {
                         if (event.key === 'Enter') createBom();
                       }}
                     />
+                    {newBomNameError && <p className="text-[11px] text-red-600">{newBomNameError}</p>}
                   </div>
                   <div className="flex justify-end gap-2 mt-3">
                     <button
                       type="button"
-                      onClick={() => setNewBomOpen(false)}
+                      onClick={() => {
+                        setNewBomOpen(false);
+                        setNewBomNameError('');
+                      }}
                       className="px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:bg-slate-100"
                     >
                       Batal
@@ -274,7 +388,8 @@ export default function BomListPage() {
                     <button
                       type="button"
                       onClick={createBom}
-                      className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-sky-600 hover:bg-sky-700"
+                      disabled={newBomName.trim().length < 3}
+                      className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-sky-600 hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
                     >
                       Buat
                     </button>
@@ -288,25 +403,41 @@ export default function BomListPage() {
 
       <div className="max-w-[1600px] mx-auto px-6 py-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-          <div className="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500">Total BOM</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{stats.totalBom}</p>
-            <p className="text-xs text-slate-500 mt-1">Grand total: {fmtRp(stats.totalCost)}</p>
-          </div>
-          <div className="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
-            <p className="text-xs text-slate-500">Butuh Review</p>
-            <p className="text-2xl font-bold text-amber-700 mt-1">{stats.reviewCount}</p>
-            <p className="text-xs text-slate-500 mt-1">Filter `needsReview=true` tersedia</p>
-          </div>
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-4 h-4 text-amber-700" />
-              <p className="text-xs font-semibold text-amber-900 uppercase">BOM Perlu Review</p>
-            </div>
-            <p className="text-xs text-amber-900">Expiring 30 hari: {stats.expiringCount}</p>
-            <p className="text-xs text-amber-900">Belum revisi {'>'} 6 bulan: {stats.staleCount}</p>
-            <p className="text-xs text-amber-900">Draft {'>'} 14 hari: {stats.oldDraftCount}</p>
-          </div>
+          {loading ? (
+            <>
+              {[1, 2, 3].map((key) => (
+                <div key={key} className="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+                  <div className="animate-pulse space-y-2">
+                    <div className="h-3 w-24 rounded bg-slate-200" />
+                    <div className="h-7 w-20 rounded bg-slate-200" />
+                    <div className="h-3 w-36 rounded bg-slate-200" />
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs text-slate-500">Total BOM</p>
+                <p className="text-2xl font-bold text-slate-900 mt-1">{stats.totalBom}</p>
+                <p className="text-xs text-slate-500 mt-1">Grand total: {fmtRp(stats.totalCost)}</p>
+              </div>
+              <div className="rounded-xl bg-white border border-slate-200 p-4 shadow-sm">
+                <p className="text-xs text-slate-500">Butuh Review</p>
+                <p className="text-2xl font-bold text-amber-700 mt-1">{stats.reviewCount}</p>
+                <p className="text-xs text-slate-500 mt-1">Filter `needsReview=true` tersedia</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 shadow-sm">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700" />
+                  <p className="text-xs font-semibold text-amber-900 uppercase">BOM Perlu Review</p>
+                </div>
+                <p className="text-xs text-amber-900">Expiring 30 hari: {stats.expiringCount}</p>
+                <p className="text-xs text-amber-900">Belum revisi {'>'} 6 bulan: {stats.staleCount}</p>
+                <p className="text-xs text-amber-900">Draft {'>'} 14 hari: {stats.oldDraftCount}</p>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex items-center gap-3 mb-4">
@@ -401,20 +532,56 @@ export default function BomListPage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Nama BOM</th>
-                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Kode</th>
-                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Product Type</th>
-                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Used in WO</th>
-                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Expiry</th>
-                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Needs Review</th>
-                <th className="py-2.5 px-3 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Grand Total</th>
-                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Updated</th>
+                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('name')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Nama BOM {renderSortIcon('name')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('code')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Kode {renderSortIcon('code')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('productType')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Product Type {renderSortIcon('productType')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('status')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Status {renderSortIcon('status')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('usedInWo')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Used in WO {renderSortIcon('usedInWo')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('expiryState')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Expiry {renderSortIcon('expiryState')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('needsReview')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Needs Review {renderSortIcon('needsReview')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('grandTotal')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Grand Total {renderSortIcon('grandTotal')}
+                  </button>
+                </th>
+                <th className="py-2.5 px-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                  <button type="button" onClick={() => toggleSort('updatedAt')} className="inline-flex items-center gap-1 hover:text-slate-700">
+                    Updated {renderSortIcon('updatedAt')}
+                  </button>
+                </th>
                 <th className="py-2.5 px-3 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {!loading && items.map((item) => {
+              {!loading && sortedItems.map((item) => {
                 const usage = woUsage[item.id];
                 const usageLabel = usage?.loading ? '...' : String(usage?.count ?? 0);
                 return (
@@ -484,7 +651,7 @@ export default function BomListPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteBom(item)}
+                          onClick={() => requestDeleteBom(item)}
                           title="Hapus"
                           className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
                         >
@@ -495,7 +662,7 @@ export default function BomListPage() {
                   </tr>
                 );
               })}
-              {!loading && items.length === 0 && (
+              {!loading && sortedItems.length === 0 && (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400 text-sm">
                     Tidak ada data BOM.
@@ -503,11 +670,29 @@ export default function BomListPage() {
                 </tr>
               )}
               {loading && (
-                <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400 text-sm">
-                    Memuat data BOM...
-                  </td>
-                </tr>
+                <>
+                  {[1, 2, 3, 4].map((idx) => (
+                    <tr key={idx} className="border-b border-slate-100">
+                      <td colSpan={10} className="py-2 px-3">
+                        <div className="animate-pulse h-6 rounded bg-slate-100" />
+                      </td>
+                    </tr>
+                  ))}
+                  {slowLoading && (
+                    <tr>
+                      <td colSpan={10} className="py-3 text-center text-xs text-amber-700">
+                        Memuat data lebih lama dari biasanya.
+                        <button
+                          type="button"
+                          onClick={() => fetchList()}
+                          className="ml-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                        >
+                          Coba Lagi
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -518,6 +703,65 @@ export default function BomListPage() {
             {error}
           </div>
         )}
+
+        {deleteTarget && (
+          <ConfirmDeleteModal
+            item={deleteTarget}
+            usageCount={woUsage[deleteTarget.id]?.count || 0}
+            deleting={deleting}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={confirmDeleteBom}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDeleteModal({
+  item,
+  usageCount,
+  deleting,
+  onCancel,
+  onConfirm,
+}: {
+  item: BomListItem;
+  usageCount: number;
+  deleting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/35" onClick={onCancel} />
+      <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+        <h3 className="text-sm font-semibold text-slate-900">Konfirmasi Hapus BOM</h3>
+        <p className="mt-2 text-xs text-slate-600">
+          Anda akan menghapus <span className="font-semibold text-slate-900">{item.code} - {item.name}</span>.
+        </p>
+        {usageCount > 0 && (
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+            BOM dipakai di {usageCount} WO. Hapus tetap akan menggunakan force delete.
+          </p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {deleting ? 'Menghapus...' : 'Ya, Hapus'}
+          </button>
+        </div>
       </div>
     </div>
   );

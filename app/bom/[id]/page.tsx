@@ -52,6 +52,26 @@ function canReview(role: string): boolean {
   return role === 'owner' || role === 'supervisor';
 }
 
+function hasMetadataValidationErrors(meta: BomMetadata): boolean {
+  if (!meta.productCode?.trim()) return true;
+  if (!meta.productName?.trim()) return true;
+  if (!meta.itemType?.trim()) return true;
+  if (!meta.productType?.trim()) return true;
+  if (!meta.customer?.trim()) return true;
+  if (!meta.buyerCode?.trim()) return true;
+  if (!meta.leadTime?.trim()) return true;
+  if ((parseFloat(meta.bomQuantity || '0') || 0) <= 0) return true;
+  if ((parseFloat(meta.itemWidth || '0') || 0) <= 0) return true;
+  if ((parseFloat(meta.itemDepth || '0') || 0) <= 0) return true;
+  if ((parseFloat(meta.itemHeight || '0') || 0) <= 0) return true;
+  if (meta.effectiveDate && meta.expiryDate) {
+    const effDate = new Date(meta.effectiveDate);
+    const expDate = new Date(meta.expiryDate);
+    if (expDate <= effDate) return true;
+  }
+  return false;
+}
+
 function downloadBase64File(file: { name: string; mimeType: string; contentBase64: string }) {
   const binary = window.atob(file.contentBase64);
   const bytes = new Uint8Array(binary.length);
@@ -118,6 +138,7 @@ export default function BomDetailPage() {
     message: '',
     severity: 'success',
   });
+  const [saveValidationToken, setSaveValidationToken] = useState(0);
 
   const unsaved = useUnsavedChanges({ pageTitle: 'BoM' });
   const currentUndoState = useMemo<UndoState>(() => ({ bomRows, metadata }), [bomRows, metadata]);
@@ -204,6 +225,11 @@ export default function BomDetailPage() {
     if (!document || !currentVersion) return;
     if (isReadOnly) {
       showToast('Versi ini immutable/read-only', 'warning');
+      return;
+    }
+    setSaveValidationToken((value) => value + 1);
+    if (hasMetadataValidationErrors(metadata)) {
+      showToast('Lengkapi field wajib pada informasi produk sebelum simpan', 'warning');
       return;
     }
     if (usedInWoCount > 0) {
@@ -621,7 +647,12 @@ export default function BomDetailPage() {
         />
 
         <div className="flex-1 flex flex-col min-h-0">
-          <BomConfigHeader metadata={metadata} onChange={setMetadataWithUndo} onHitungBom={() => setKalkulasiOpen(true)} />
+          <BomConfigHeader
+            metadata={metadata}
+            onChange={setMetadataWithUndo}
+            onHitungBom={() => setKalkulasiOpen(true)}
+            saveValidationToken={saveValidationToken}
+          />
           <div className="flex-1 flex flex-col min-h-0 bg-white border-t border-slate-200 overflow-hidden">
             <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
               {['components', 'operations', 'packing', 'miscellaneous'].map((tab) => (
