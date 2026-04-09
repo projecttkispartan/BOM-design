@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: 'DM Sans', 'Arimo', system-ui, sans-serif;
+  --surface: #f1f5f9;
+  --surface-elevated: #ffffff;
+  --border: rgba(15, 23, 42, 0.12);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+}
+
+body {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+@layer base {
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-right {
+  animation: slide-in-right 0.2s ease-out;
+}
+
+@keyframes slide-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in-left {
+  animation: slide-in-left 0.2s ease-out;
+}
+
+@keyframes animate-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-in {
+  animation: animate-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.scrollbar-visible::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-visible::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.06);
+  border-radius: 4px;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.2);
+  border-radius: 4px;
+}
+.scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.35);
+}
+.scrollbar-visible {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.2) rgba(15, 23, 42, 0.06);
+}

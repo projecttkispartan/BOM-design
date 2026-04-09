@@ -1,0 +1,12 @@
+/* Modern base — DM Sans with Arimo fallback */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+:root {
+  --font-arimo: 'Arimo', sans-serif;
+  --font-sans: 'DM Sans', 'Arimo', system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,156 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum BomStatus {
+  draft
+  submitted
+  approved
+  final
+  archived
+}
+
+enum UserRole {
+  owner
+  supervisor
+  engineering
+  ppic
+  procurement
+}
+
+enum ApprovalAction {
+  submit
+  approve
+  reject
+  finalize
+}
+
+enum ProductType {
+  Standard
+  Custom
+  Export
+  OEM
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(engineering)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model BomDocument {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  description      String?
+  currentVersionId String?
+  productType      ProductType @default(Standard)
+  leadTimeDays     Int?
+  effectiveDate    DateTime?
+  expiryDate       DateTime?
+  
+  versions         BomVersion[]
+  approvals        ApprovalHistory[]
+  auditLogs        AuditLog[]
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@index([code])
+  @@index([productType])
+  @@index([expiryDate])
+  @@index([createdAt])
+}
+
+model BomVersion {
+  id               String   @id @default(cuid())
+  versionId        String   @unique @default(cuid())
+  version          String   // e.g., "1.0", "1.1", "2.0"
+  status           BomStatus @default(draft)
+  isImmutable      Boolean @default(false)
+  productType      ProductType @default(Standard)
+  leadTimeDays     Int?
+  effectiveDate    DateTime?
+  expiryDate       DateTime?
+  materialCost     Float @default(0)
+  manufactureCost  Float @default(0)
+  hardwareCost     Float @default(0)
+  packingCost      Float @default(0)
+  treatmentCost    Float @default(0)
+  grandTotal       Float @default(0)
+  
+  documentId       String
+  document         BomDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  parentVersionId  String?
+  parentVersion    BomVersion? @relation("VersionParent", fields: [parentVersionId], references: [id])
+  childVersions    BomVersion[] @relation("VersionParent")
+  approvals        ApprovalHistory[]
+  auditLogs        AuditLog[]
+  
+  createdBy        String   @default("System")
+  notes            String?
+  
+  // JSON storage for flexibility
+  metadataJson     String   // BomMetadata as JSON
+  bomRowsJson      String   // BomRow[] as JSON
+  hardwareRowsJson String?  // HardwareRow[] as JSON
+  operationsJson   String?  // Operation[] as JSON
+  packingRowsJson  String?  // PackingRow[] as JSON
+  packingInfoJson  String?  // PackingInfo as JSON
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@index([documentId])
+  @@index([status])
+  @@index([productType])
+  @@index([expiryDate])
+  @@index([createdAt])
+}
+
+model ApprovalHistory {
+  id         String         @id @default(cuid())
+  documentId String
+  document   BomDocument    @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId  String?
+  version    BomVersion?    @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  action     ApprovalAction
+  actorId    String
+  actorRole  UserRole
+  comment    String?
+  createdAt  DateTime       @default(now())
+
+  @@index([documentId, createdAt])
+  @@index([versionId, createdAt])
+}
+
+model AuditLog {
+  id               String   @id @default(cuid())
+  documentId       String
+  document         BomDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionId        String?
+  version          BomVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  action           String   // CREATE, UPDATE, DELETE, PUBLISH, ARCHIVE
+  userId           String   @default("System")
+  details          String?  // JSON or text details
+  
+  createdAt        DateTime @default(now())
+  
+  @@index([documentId])
+  @@index([createdAt])
+}
