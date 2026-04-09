@@ -52,7 +52,7 @@ interface TreatmentOption {
   name: string;
   category: string;
   description: string;
-  cost: number;
+  photoUrl: string;
 }
 
 interface TreatmentModalState {
@@ -60,17 +60,30 @@ interface TreatmentModalState {
   selected: string[];
   category: string;
   search: string;
+  photoUrl: string;
+  dimP: string;
+  dimL: string;
+  dimT: string;
+  side: string;
+  notes: string;
+  material: string;
+  grade: string;
+}
+
+function masterTreatmentPhoto(title: string, bg: string): string {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='280' viewBox='0 0 480 280'><rect width='480' height='280' fill='${bg}'/><rect x='20' y='20' width='440' height='240' rx='16' fill='rgba(255,255,255,0.85)'/><text x='240' y='136' text-anchor='middle' font-size='28' font-family='Arial, sans-serif' fill='#0f172a' font-weight='700'>${title}</text><text x='240' y='168' text-anchor='middle' font-size='14' font-family='Arial, sans-serif' fill='#334155'>Master Photo Treatment</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 const TREATMENT_OPTIONS: TreatmentOption[] = [
-  { id: 'tr-kd', name: 'Kiln Dry', category: 'Kayu', description: 'Stabilisasi kadar air material kayu', cost: 25000 },
-  { id: 'tr-antirayap', name: 'Anti Rayap', category: 'Kayu', description: 'Perlindungan rayap untuk furniture indoor', cost: 40000 },
-  { id: 'tr-antijamur', name: 'Anti Jamur', category: 'Kayu', description: 'Lapisan anti jamur untuk area lembap', cost: 30000 },
-  { id: 'tr-water', name: 'Water Repellent', category: 'Finishing', description: 'Pelindung terhadap cipratan air', cost: 35000 },
-  { id: 'tr-uv', name: 'UV Protection', category: 'Finishing', description: 'Menjaga warna dari paparan UV', cost: 50000 },
-  { id: 'tr-polish', name: 'High Polish', category: 'Finishing', description: 'Finishing glossy premium', cost: 60000 },
-  { id: 'tr-qc', name: 'QC Premium', category: 'Quality', description: 'Pemeriksaan tambahan sebelum packing', cost: 20000 },
-  { id: 'tr-pack', name: 'Extra Packaging', category: 'Quality', description: 'Proteksi tambahan saat pengiriman', cost: 15000 },
+  { id: 'tr-kd', name: 'Kiln Dry', category: 'Kayu', description: 'Stabilisasi kadar air material kayu', photoUrl: masterTreatmentPhoto('Kiln Dry', '#c7d2fe') },
+  { id: 'tr-antirayap', name: 'Anti Rayap', category: 'Kayu', description: 'Perlindungan rayap untuk furniture indoor', photoUrl: masterTreatmentPhoto('Anti Rayap', '#bfdbfe') },
+  { id: 'tr-antijamur', name: 'Anti Jamur', category: 'Kayu', description: 'Lapisan anti jamur untuk area lembap', photoUrl: masterTreatmentPhoto('Anti Jamur', '#bae6fd') },
+  { id: 'tr-water', name: 'Water Repellent', category: 'Finishing', description: 'Pelindung terhadap cipratan air', photoUrl: masterTreatmentPhoto('Water Repellent', '#a7f3d0') },
+  { id: 'tr-uv', name: 'UV Protection', category: 'Finishing', description: 'Menjaga warna dari paparan UV', photoUrl: masterTreatmentPhoto('UV Protection', '#fde68a') },
+  { id: 'tr-polish', name: 'High Polish', category: 'Finishing', description: 'Finishing glossy premium', photoUrl: masterTreatmentPhoto('High Polish', '#fecaca') },
+  { id: 'tr-qc', name: 'QC Premium', category: 'Quality', description: 'Pemeriksaan tambahan sebelum packing', photoUrl: masterTreatmentPhoto('QC Premium', '#ddd6fe') },
+  { id: 'tr-pack', name: 'Extra Packaging', category: 'Quality', description: 'Proteksi tambahan saat pengiriman', photoUrl: masterTreatmentPhoto('Extra Packaging', '#e5e7eb') },
 ];
 
 function num(value: string | number | undefined): number {
@@ -141,6 +154,14 @@ function getLevelMeta(row: BomRow): { label: string; cls: string } {
     return { label: 'OPERATION', cls: 'border-violet-200 bg-violet-50 text-violet-700' };
   }
   return { label: 'PART', cls: 'border-amber-200 bg-amber-50 text-amber-700' };
+}
+
+function getTreatmentVolume(dimP: string, dimL: string, dimT: string): string {
+  const p = num(dimP);
+  const l = num(dimL);
+  const t = num(dimT);
+  if (p <= 0 || l <= 0 || t <= 0) return '-';
+  return `${((p * l * t) / 1e9).toFixed(4)} m3`;
 }
 
 export function ComponentsTable({
@@ -218,11 +239,21 @@ export function ComponentsTable({
   );
 
   const openTreatmentModal = (row: BomRow) => {
+    const selected = parseTreatmentSelection(row);
+    const masterPhoto = TREATMENT_OPTIONS.find((option) => selected.includes(option.id))?.photoUrl ?? '';
     setTreatmentModal({
       rowId: row.id,
-      selected: parseTreatmentSelection(row),
+      selected,
       category: 'Semua',
       search: '',
+      photoUrl: String(row.treatmentPhotoUrl ?? masterPhoto),
+      dimP: String(row.treatmentDimP ?? ''),
+      dimL: String(row.treatmentDimL ?? ''),
+      dimT: String(row.treatmentDimT ?? ''),
+      side: String(row.treatmentSide ?? ''),
+      notes: String(row.treatmentNotes ?? ''),
+      material: String(row.material ?? ''),
+      grade: String(row.grade ?? ''),
     });
   };
 
@@ -234,11 +265,21 @@ export function ComponentsTable({
     if (!treatmentModal) return;
     const selectedOptions = TREATMENT_OPTIONS.filter((option) => treatmentModal.selected.includes(option.id));
     const treatmentText = selectedOptions.map((option) => option.name).join(', ');
-    const treatmentCost = selectedOptions.reduce((acc, option) => acc + option.cost, 0);
+    const masterPhoto = selectedOptions[0]?.photoUrl ?? '';
+    const treatmentVolume = getTreatmentVolume(treatmentModal.dimP, treatmentModal.dimL, treatmentModal.dimT);
     updateBomRow(treatmentModal.rowId, {
       treatment: treatmentText,
-      treatmentCost: treatmentCost > 0 ? String(treatmentCost) : '',
+      treatmentCost: '',
       treatmentItems: selectedOptions.map((option) => option.id),
+      treatmentPhotoUrl: treatmentModal.photoUrl || masterPhoto,
+      treatmentDimP: treatmentModal.dimP,
+      treatmentDimL: treatmentModal.dimL,
+      treatmentDimT: treatmentModal.dimT,
+      treatmentVolume: treatmentVolume === '-' ? '' : treatmentVolume,
+      treatmentSide: treatmentModal.side,
+      treatmentNotes: treatmentModal.notes,
+      treatmentMaterial: treatmentModal.material,
+      treatmentGrade: treatmentModal.grade,
     });
     setTreatmentModal(null);
   };
@@ -252,6 +293,12 @@ export function ComponentsTable({
         return byCategory && `${option.name} ${option.description}`.toLowerCase().includes(keyword);
       })
     : [];
+  const activeTreatmentPhoto = treatmentModal
+    ? TREATMENT_OPTIONS.find((option) => treatmentModal.selected.includes(option.id))?.photoUrl || treatmentModal.photoUrl
+    : '';
+  const treatmentVolume = treatmentModal
+    ? getTreatmentVolume(treatmentModal.dimP, treatmentModal.dimL, treatmentModal.dimT)
+    : '-';
 
   const isManual = bomInputMode === 'manual';
   const disableClass = isReadOnly ? 'opacity-60 cursor-not-allowed' : '';
@@ -525,7 +572,9 @@ export function ComponentsTable({
                           const selected = prev.selected.includes(option.id)
                             ? prev.selected.filter((id) => id !== option.id)
                             : [...prev.selected, option.id];
-                          return { ...prev, selected };
+                          const nextPhoto =
+                            TREATMENT_OPTIONS.find((item) => selected.includes(item.id))?.photoUrl || prev.photoUrl;
+                          return { ...prev, selected, photoUrl: nextPhoto };
                         })
                       }
                       className={`rounded-xl border p-3 text-left transition ${
@@ -536,7 +585,6 @@ export function ComponentsTable({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-slate-800">{option.name}</span>
-                        <span className="text-xs font-semibold text-sky-700">{fmtDualMoney(option.cost, currency)}</span>
                       </div>
                       <p className="mt-1 text-[11px] text-slate-600">{option.description}</p>
                       <span className="mt-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{option.category}</span>
@@ -544,12 +592,112 @@ export function ComponentsTable({
                   );
                 })}
               </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">Detail Treatment</div>
+                <div className="grid gap-3 md:grid-cols-[180px,1fr]">
+                  <div className="space-y-2">
+                    <div className="flex h-32 items-center justify-center overflow-hidden rounded-lg border border-slate-300 bg-white">
+                      {activeTreatmentPhoto ? (
+                        <img src={activeTreatmentPhoto} alt="Treatment" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-[11px] text-slate-500">Belum ada foto treatment</span>
+                      )}
+                    </div>
+                    <div className="rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                      Foto treatment dari master.
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="text-[11px] text-slate-600">
+                        Material
+                        <input
+                          value={treatmentModal.material}
+                          readOnly
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs text-slate-800"
+                        />
+                      </label>
+                      <label className="text-[11px] text-slate-600">
+                        Grade
+                        <input
+                          value={treatmentModal.grade}
+                          readOnly
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs text-slate-800"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-4">
+                      <label className="text-[11px] text-slate-600">
+                        P (mm)
+                        <input
+                          value={treatmentModal.dimP}
+                          onChange={(event) => setTreatmentModal((prev) => (prev ? { ...prev, dimP: event.target.value } : prev))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
+                          placeholder="0"
+                        />
+                      </label>
+                      <label className="text-[11px] text-slate-600">
+                        L (mm)
+                        <input
+                          value={treatmentModal.dimL}
+                          onChange={(event) => setTreatmentModal((prev) => (prev ? { ...prev, dimL: event.target.value } : prev))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
+                          placeholder="0"
+                        />
+                      </label>
+                      <label className="text-[11px] text-slate-600">
+                        T (mm)
+                        <input
+                          value={treatmentModal.dimT}
+                          onChange={(event) => setTreatmentModal((prev) => (prev ? { ...prev, dimT: event.target.value } : prev))}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
+                          placeholder="0"
+                        />
+                      </label>
+                      <label className="text-[11px] text-slate-600">
+                        Volume Hasil
+                        <input
+                          value={treatmentVolume}
+                          readOnly
+                          className="mt-1 w-full rounded-md border border-slate-200 bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700"
+                        />
+                      </label>
+                    </div>
+
+                    <label className="block text-[11px] text-slate-600">
+                      Sisi Treatment
+                      <input
+                        value={treatmentModal.side}
+                        onChange={(event) => setTreatmentModal((prev) => (prev ? { ...prev, side: event.target.value } : prev))}
+                        className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
+                        placeholder="Contoh: 2 sisi / 4 sisi"
+                      />
+                    </label>
+
+                    <label className="block text-[11px] text-slate-600">
+                      Catatan Treatment
+                      <textarea
+                        value={treatmentModal.notes}
+                        onChange={(event) => setTreatmentModal((prev) => (prev ? { ...prev, notes: event.target.value } : prev))}
+                        rows={2}
+                        className="mt-1 w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
+                        placeholder="Tambahkan catatan treatment..."
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
               <div className="text-xs text-slate-600">
                 <div>{selectedTreatmentOptions.length} item dipilih</div>
-                <div className="font-semibold text-slate-900">Total: {fmtDualMoney(selectedTreatmentOptions.reduce((acc, option) => acc + option.cost, 0), currency)}</div>
+                <div className="font-semibold text-slate-900">
+                  Proses: {selectedTreatmentOptions.map((option) => option.name).join(', ') || '-'}
+                </div>
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setTreatmentModal(null)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
