@@ -3,6 +3,7 @@ import type { BomMetadata, BomRow, HardwareRow, Operation, PackingInfo, PackingR
 import db from '@/lib/db';
 import { computeSummary, recomputeRow } from '@/lib/calculations';
 import { normalizeBomRow } from '@/lib/normalizeBomRow';
+import { computePricingFromMetadata } from '@/lib/pricing';
 import type { RequestActor } from '@/lib/rbac';
 import { getWorkOrderUsage } from '@/lib/integrations/workOrder';
 import { getComponentStocks } from '@/lib/integrations/inventory';
@@ -214,6 +215,8 @@ function normalizeMetadata(input: Partial<BomMetadata> | undefined, codeFallback
     defaultVersi: Boolean(input?.defaultVersi),
     bomQuantity: String(input?.bomQuantity ?? '1'),
     bomUnit: String(input?.bomUnit ?? 'EA'),
+    markupPercent: String(input?.markupPercent ?? '16.67'),
+    usdRate: String(input?.usdRate ?? '16000'),
     leadTime: String(input?.leadTime ?? ''),
     effectiveDate: String(input?.effectiveDate ?? ''),
     expiryDate: String(input?.expiryDate ?? ''),
@@ -1103,6 +1106,7 @@ function normalizeExportFormat(format: string | undefined): BomExportFormat {
 }
 
 function buildCsv(version: BomVersionDTO, document: { code: string; name: string }): string {
+  const pricing = computePricingFromMetadata(version.costSummary.grandTotal, version.metadata);
   const header = ['No', 'Part Code', 'Description', 'Qty', 'Scrap%', 'Qty Actual', 'Material Cost', 'Manufacture Cost'];
   const rows = version.bomRows.map((row) => {
     const qty = toNum(row.qty);
@@ -1117,6 +1121,11 @@ function buildCsv(version: BomVersionDTO, document: { code: string; name: string
     `BOM Name,${document.name}`,
     `Version,${version.version}`,
     `Status,${version.status.toUpperCase()}`,
+    `COGS,${pricing.cogs.toFixed(2)}`,
+    `Markup Percent,${pricing.markupPercent.toFixed(2)}`,
+    `Selling Price,${pricing.sellingPrice.toFixed(2)}`,
+    `Margin Percent,${pricing.marginPercent.toFixed(2)}`,
+    `Selling Price (USD),${pricing.sellingPriceUsd.toFixed(2)}`,
     '',
     header.join(','),
     ...rows.map((row) => row.map((item) => `"${String(item ?? '').replace(/"/g, '""')}"`).join(',')),
@@ -1124,6 +1133,7 @@ function buildCsv(version: BomVersionDTO, document: { code: string; name: string
 }
 
 function buildPdfLikeText(version: BomVersionDTO, document: { code: string; name: string }, procurement: any): string {
+  const pricing = computePricingFromMetadata(version.costSummary.grandTotal, version.metadata);
   const lines: string[] = [];
   lines.push('BOM EXPORT');
   lines.push(`WATERMARK: ${version.status.toUpperCase()}`);
@@ -1139,6 +1149,11 @@ function buildPdfLikeText(version: BomVersionDTO, document: { code: string; name
   lines.push(`HARDWARE: ${version.costSummary.hardware.toFixed(2)}`);
   lines.push(`PACKING: ${version.costSummary.packing.toFixed(2)}`);
   lines.push(`GRAND TOTAL: ${version.costSummary.grandTotal.toFixed(2)}`);
+  lines.push(`COGS: ${pricing.cogs.toFixed(2)}`);
+  lines.push(`MARKUP %: ${pricing.markupPercent.toFixed(2)}`);
+  lines.push(`SELLING PRICE: ${pricing.sellingPrice.toFixed(2)}`);
+  lines.push(`MARGIN %: ${pricing.marginPercent.toFixed(2)}`);
+  lines.push(`SELLING PRICE USD: ${pricing.sellingPriceUsd.toFixed(2)}`);
   lines.push('');
   lines.push('PROCUREMENT SNAPSHOT');
   lines.push(`Source: ${procurement.source}`);

@@ -129,6 +129,7 @@ export function DetailDrawer({ row, allRows, onClose, onUpdate, bomInputMode = '
         <div className="p-5">
           <Section title="Informasi Dasar">
             <EditableField label="Kode" field="partCode" />
+            <EditableField label="Nama Komponen" field="description" />
             <Field label="Tipe" value={typeLabel} />
             <Field label="Parent" value={parentName} />
             <EditableField label="QTY" field="qty" suffix={row.unit} />
@@ -229,6 +230,7 @@ export function DetailDrawer({ row, allRows, onClose, onUpdate, bomInputMode = '
                 <Field label="Biaya pekerja total" value={fmtRp(workerTotalManual)} />
                 <EditableField label="Unit" field="manufacturingUnit" />
                 <EditableField label="Penggunaan mesin" field="machineUsage" />
+                <EditableField label="Waktu mesin" field="machineCostTimeMin" suffix="menit" />
                 <EditableField label="Machine cost" field="machineCost" suffix="Rp" />
                 <EditableField label="Total cost" field="totalManufactureCost" suffix="Rp" />
                 <div className="text-xs">
@@ -288,7 +290,6 @@ export function DetailDrawer({ row, allRows, onClose, onUpdate, bomInputMode = '
                 ))}
               </select>
             </div>
-            <EditableField label="Biaya Treatment" field="treatmentCost" suffix="Rp" />
           </Section>
 
           <Section title="Catatan">

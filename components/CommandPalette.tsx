@@ -21,6 +21,7 @@ const COMMANDS: Command[] = [
   { id: 'view-kalkulasi', label: 'View Kalkulasi', action: 'viewKalkulasi', icon: Calculator },
   { id: 'tab-components', label: 'Beralih ke Components', action: 'switchTab', payload: 'components', icon: List },
   { id: 'tab-operations', label: 'Beralih ke Operations', action: 'switchTab', payload: 'operations', icon: Wrench },
+  { id: 'tab-scenario', label: 'Beralih ke Scenario Kalkulasi', action: 'switchTab', payload: 'scenario', icon: Calculator },
   { id: 'tab-miscellaneous', label: 'Beralih ke Miscellaneous', action: 'switchTab', payload: 'miscellaneous', icon: LayoutList },
   { id: 'density-compact', label: 'Kepadatan: Compact', action: 'setDensity', payload: 'compact', icon: LayoutGrid },
   { id: 'density-comfortable', label: 'Kepadatan: Comfortable', action: 'setDensity', payload: 'comfortable', icon: LayoutGrid },

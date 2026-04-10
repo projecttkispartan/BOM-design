@@ -17,6 +17,8 @@ export const defaultMetadata: BomMetadata = {
   versiBom: '1',
   bomQuantity: '1',
   bomUnit: 'EA',
+  markupPercent: '16.67',
+  usdRate: '16000',
   leadTime: '',
   effectiveDate: '',
   expiryDate: '',

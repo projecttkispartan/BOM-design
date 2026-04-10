@@ -14,6 +14,8 @@ export interface BomMetadata {
   defaultVersi?: boolean;
   bomQuantity: string;
   bomUnit: string;
+  markupPercent?: string;
+  usdRate?: string;
   leadTime?: string;
   effectiveDate?: string;
   expiryDate?: string;

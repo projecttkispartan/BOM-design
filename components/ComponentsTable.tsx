@@ -1,10 +1,9 @@
-﻿'use client';
+'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Calculator,
   ChevronDown,
-  ChevronRight,
   Eye,
   Layers3,
   Plus,
@@ -189,42 +188,10 @@ export function ComponentsTable({
   warnUsedInWo,
   isReadOnly = false,
 }: ComponentsTableProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(bomRows.filter((row) => row.levelNum <= 1).map((row) => row.id)),
-  );
   const [treatmentModal, setTreatmentModal] = useState<TreatmentModalState | null>(null);
 
-  useEffect(() => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      bomRows
-        .filter((row) => row.levelNum <= 1)
-        .forEach((row) => next.add(row.id));
-      return next;
-    });
-  }, [bomRows]);
-
   const rowById = useMemo(() => new Map(bomRows.map((row) => [row.id, row])), [bomRows]);
-  const hasChildren = useMemo(() => {
-    const ids = new Set<string>();
-    bomRows.forEach((row) => {
-      if (row.parentId) ids.add(row.parentId);
-    });
-    return ids;
-  }, [bomRows]);
-
-  const visibleRows = useMemo(
-    () =>
-      bomRows.filter((row) => {
-        let parentId = row.parentId;
-        while (parentId) {
-          if (!expanded.has(parentId)) return false;
-          parentId = rowById.get(parentId)?.parentId ?? null;
-        }
-        return true;
-      }),
-    [bomRows, expanded, rowById],
-  );
+  const visibleRows = bomRows;
 
   const summary = useMemo(() => computeSummary(bomRows, hardwareRows, packingRows), [bomRows, hardwareRows, packingRows]);
   const totalBiayaMaterial = useMemo(
@@ -302,34 +269,12 @@ export function ComponentsTable({
 
   const isManual = bomInputMode === 'manual';
   const disableClass = isReadOnly ? 'opacity-60 cursor-not-allowed' : '';
+  const CELL_INPUT = 'w-full rounded border border-slate-300 bg-white px-1.5 py-1 text-xs text-slate-800 outline-none focus:border-sky-500';
+  const CELL_INPUT_NUM = `${CELL_INPUT} text-right tabular-nums`;
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
       <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={onAddModul} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${disableClass}`}>
-            <Plus className="h-3.5 w-3.5" /> Modul
-          </button>
-          <button type="button" onClick={onAddSubModul} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${disableClass}`}>
-            <Layers3 className="h-3.5 w-3.5" /> Sub Modul
-          </button>
-          <button type="button" onClick={onAddLine} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 ${disableClass}`}>
-            <Plus className="h-3.5 w-3.5" /> Baris
-          </button>
-          <button type="button" onClick={onAddOperation} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 ${disableClass}`}>
-            <Sparkles className="h-3.5 w-3.5" /> Operasi
-          </button>
-          <button type="button" onClick={onAddMeja} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 ${disableClass}`}>
-            <Plus className="h-3.5 w-3.5" /> Template
-          </button>
-          <button type="button" onClick={onOpenCatalog} disabled={isReadOnly} className={`inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 ${disableClass}`}>
-            <Plus className="h-3.5 w-3.5" /> Catalog
-          </button>
-          <button type="button" onClick={onRecalculate} className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-            <Calculator className="h-3.5 w-3.5" /> Hitung Ulang
-          </button>
-        </div>
-
         <div className="grid gap-2 md:grid-cols-[2fr,1fr,1fr]">
           <label className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Proses</span>
@@ -339,7 +284,7 @@ export function ComponentsTable({
               onChange={(event) => onChangeProses?.(event.target.value)}
               className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500"
               placeholder="Contoh: Assembly + Finishing"
-              disabled={isReadOnly}
+             
             />
           </label>
           <div className="rounded-lg border border-slate-200 bg-amber-50 px-2.5 py-2">
@@ -354,23 +299,52 @@ export function ComponentsTable({
         {warnUsedInWo && <p className="mt-2 text-[11px] text-amber-700">BOM sedang dipakai WO, perubahan akan berdampak ke costing aktif.</p>}
       </div>
 
-      <div className="scrollbar-visible flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="min-w-[2200px] border-collapse text-xs">
+      <div className="flex flex-1 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Komponen</span>
+            <button type="button" onClick={onAddModul} className={`inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${disableClass}`}>
+              <Plus className="h-3.5 w-3.5" /> Modul
+            </button>
+            <button type="button" onClick={onAddSubModul} className={`inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 ${disableClass}`}>
+              <Layers3 className="h-3.5 w-3.5" /> Sub Modul
+            </button>
+            <button type="button" onClick={onAddLine} className={`inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 ${disableClass}`}>
+              <Plus className="h-3.5 w-3.5" /> Part
+            </button>
+            <button type="button" onClick={onAddOperation} className={`inline-flex items-center gap-1 rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100 ${disableClass}`}>
+              <Sparkles className="h-3.5 w-3.5" /> Operasi
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={onAddMeja} className={`inline-flex items-center gap-1 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 ${disableClass}`}>
+              <Plus className="h-3.5 w-3.5" /> Template
+            </button>
+            <button type="button" onClick={onOpenCatalog} className={`inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 ${disableClass}`}>
+              <Plus className="h-3.5 w-3.5" /> Catalog
+            </button>
+            <button type="button" onClick={onRecalculate} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              <Calculator className="h-3.5 w-3.5" /> Hitung Ulang
+            </button>
+          </div>
+        </div>
+        <div className="scrollbar-visible flex-1 overflow-auto">
+          <table className="min-w-[2200px] border-collapse text-xs">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-slate-200 bg-slate-100">
-              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={6}>Komponen</th>
-              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={4}>Spesifikasi</th>
-              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={isManual ? 8 : 5}>Manufacture</th>
-              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={2}>Treatment</th>
-              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={4}>Detail Keseluruhan</th>
               <th className="px-2 py-2 text-left font-semibold text-slate-700">Aksi</th>
+              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={5}>Komponen</th>
+              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={4}>Spesifikasi</th>
+              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={isManual ? 9 : 5}>Manufacture</th>
+              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={1}>Treatment</th>
+              <th className="px-2 py-2 text-left font-semibold text-slate-700" colSpan={4}>Detail Keseluruhan</th>
             </tr>
             <tr className="border-b border-slate-200 bg-white">
-              {['', 'No', 'Kode', 'Nama', 'Qty', 'Unit', 'Grade', 'P', 'L', 'T'].map((head) => (
-                <th key={head || 'tree'} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head || 'Tree'}</th>
+              {['Aksi', 'No', 'Kode', 'Nama', 'Qty', 'Unit', 'Grade', 'P', 'L', 'T'].map((head, idx) => (
+                <th key={`${head}-${idx}`} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head}</th>
               ))}
               {isManual ? (
-                ['Nama Proses', 'Gaji 8 Jam', 'Jml Pekerja', 'Setup (menit)', 'Waktu Kerja (menit)', 'Biaya Pekerja Total', 'Penggunaan Mesin', 'Biaya Mesin'].map((head) => (
+                ['Nama Proses', 'Gaji 8 Jam', 'Jml Pekerja', 'Setup (menit)', 'Waktu Kerja (menit)', 'Biaya Pekerja Total', 'Penggunaan Mesin', 'Waktu Mesin (menit)', 'Biaya Mesin'].map((head) => (
                   <th key={head} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head}</th>
                 ))
               ) : (
@@ -378,8 +352,8 @@ export function ComponentsTable({
                   <th key={head} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head}</th>
                 ))
               )}
-              {['Combo', 'Biaya Treatment', 'Biaya Material', 'Biaya Pekerja/Operasi', 'Total Semua', 'Notes', ''].map((head, idx) => (
-                <th key={`${head}-${idx}`} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head || 'Aksi'}</th>
+              {['Combo', 'Biaya Material', 'Biaya Pekerja/Operasi', 'Total Semua', 'Notes'].map((head, idx) => (
+                <th key={`${head}-${idx}`} className="whitespace-nowrap px-2 py-2 text-left font-semibold uppercase tracking-wider text-[10px] text-slate-500">{head}</th>
               ))}
             </tr>
           </thead>
@@ -395,32 +369,30 @@ export function ComponentsTable({
               const biayaTreatment = num(row.treatmentCost);
               const totalSemua = biayaMaterial + biayaOperasi + biayaTreatment;
               const stock = row.partCode ? stockByPartCode?.get(row.partCode) : undefined;
-              const isExpanded = expanded.has(row.id);
               const levelMeta = getLevelMeta(row);
 
               return (
                 <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/70">
                   <td className="px-2 py-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        hasChildren.has(row.id) &&
-                        setExpanded((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(row.id)) next.delete(row.id);
-                          else next.add(row.id);
-                          return next;
-                        })
-                      }
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100"
-                    >
-                      {hasChildren.has(row.id) ? (isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />) : <span className="text-[10px]">.</span>}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => onOpenDetail?.(row)} className="rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100"><Eye className="h-3.5 w-3.5" /></button>
+                      {onAddChildUnder && <button type="button" onClick={() => onAddChildUnder(row.id)} className={`rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100 ${disableClass}`}><Plus className="h-3.5 w-3.5" /></button>}
+                      {onAddRowAbove && <button type="button" onClick={() => onAddRowAbove(row.id)} className={`rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100 ${disableClass}`}><Layers3 className="h-3.5 w-3.5" /></button>}
+                      <button type="button" onClick={() => removeBomRow(row.id)} className={`rounded-md border border-red-300 p-1 text-red-600 hover:bg-red-50 ${disableClass}`}><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
                   </td>
-                  <td className="px-2 py-1.5 text-slate-500">{row.no}</td>
+                  <td className="px-2 py-1.5">
+                    <span className="text-slate-500">{row.no}</span>
+                  </td>
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-1">
-                      <span className="font-medium text-slate-700">{row.partCode || '-'}</span>
+                      <input
+                        value={row.partCode ?? ''}
+                        onChange={(event) => updateBomRow(row.id, { partCode: event.target.value })}
+                        className={CELL_INPUT}
+                        placeholder="Kode"
+                       
+                      />
                       {stock && (
                         <button type="button" onClick={() => onStockClick?.(row.partCode)} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                           {stock.qtyAvailable.toFixed(1)}
@@ -433,55 +405,231 @@ export function ComponentsTable({
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${levelMeta.cls}`}>
                         {levelMeta.label}
                       </span>
-                      <span className="max-w-[260px] truncate font-medium text-slate-800">
-                        {row.description || row.modul || '-'}
-                      </span>
+                      <input
+                        value={row.description ?? ''}
+                        onChange={(event) => updateBomRow(row.id, { description: event.target.value })}
+                        className={CELL_INPUT}
+                        placeholder="Nama komponen"
+                       
+                      />
                     </div>
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.qty || '-'}</td>
-                  <td className="px-2 py-1.5 text-slate-700">{row.unit || '-'}</td>
-                  <td className="px-2 py-1.5 text-slate-700">{row.grade || '-'}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.dimAP || '-'}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.dimAL || '-'}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.dimAT || '-'}</td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={row.qty ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { qty: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder="0"
+                     
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      value={row.unit ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { unit: event.target.value })}
+                      className={CELL_INPUT}
+                      placeholder="Unit"
+                     
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      value={row.grade ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { grade: event.target.value })}
+                      className={CELL_INPUT}
+                      placeholder="Grade"
+                     
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={row.dimAP ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { dimAP: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder="0"
+                     
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={row.dimAL ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { dimAL: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder="0"
+                     
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={row.dimAT ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { dimAT: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder="0"
+                     
+                    />
+                  </td>
                   {isManual ? (
                     <>
-                      <td className="px-2 py-1.5 text-slate-700">{row.processName || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.biayaTenagaKerja || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.workerCount || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.setupCleanupTime || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.workingTime || '-'}</td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.processName ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { processName: event.target.value })}
+                          className={CELL_INPUT}
+                          placeholder="Nama proses"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.biayaTenagaKerja ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { biayaTenagaKerja: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.workerCount ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { workerCount: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.setupCleanupTime ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { setupCleanupTime: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.workingTime ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { workingTime: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
                       <td className="px-2 py-1.5 text-right font-semibold text-indigo-700">{fmtDualMoney(biayaPekerjaTotal, currency)}</td>
-                      <td className="px-2 py-1.5 text-slate-700">{row.machineUsage || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.machineCost || '-'}</td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.machineUsage ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { machineUsage: event.target.value })}
+                          className={CELL_INPUT}
+                          placeholder="Penggunaan mesin"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.machineCostTimeMin ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { machineCostTimeMin: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.machineCost ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { machineCost: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
                     </>
                   ) : (
                     <>
-                      <td className="px-2 py-1.5 text-slate-700">{row.workCenterOrRouting || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.workCenterRunMin || '-'}</td>
-                      <td className="px-2 py-1.5 text-slate-700">{row.routingName || '-'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">{row.routingRunMin || '-'}</td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.workCenterOrRouting ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { workCenterOrRouting: event.target.value })}
+                          className={CELL_INPUT}
+                          placeholder="Work center"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.workCenterRunMin ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { workCenterRunMin: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          value={row.routingName ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { routingName: event.target.value })}
+                          className={CELL_INPUT}
+                          placeholder="Routing"
+                         
+                        />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <input
+                          type="number"
+                          value={row.routingRunMin ?? ''}
+                          onChange={(event) => updateBomRow(row.id, { routingRunMin: event.target.value })}
+                          className={CELL_INPUT_NUM}
+                          placeholder="0"
+                         
+                        />
+                      </td>
                       <td className="px-2 py-1.5 text-right font-semibold text-indigo-700">{fmtDualMoney(biayaOperasi, currency)}</td>
                     </>
                   )}
                   <td className="px-2 py-1.5">
-                    <button type="button" onClick={() => openTreatmentModal(row)} disabled={isReadOnly} className={`inline-flex w-40 items-center justify-between rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-left text-xs font-semibold text-sky-800 hover:bg-sky-100 ${disableClass}`}>
+                    <button type="button" onClick={() => openTreatmentModal(row)} className={`inline-flex w-40 items-center justify-between rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-left text-xs font-semibold text-sky-800 hover:bg-sky-100 ${disableClass}`}>
                       <span className="truncate">{row.treatment || 'Pilih Treatment'}</span>
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-semibold text-cyan-700">{fmtDualMoney(biayaTreatment, currency)}</td>
-                  <td className="px-2 py-1.5 text-right font-semibold text-amber-700">{fmtDualMoney(biayaMaterial, currency)}</td>
-                  <td className="px-2 py-1.5 text-right font-semibold text-indigo-700">{fmtDualMoney(biayaOperasi, currency)}</td>
-                  <td className="px-2 py-1.5 text-right font-bold text-emerald-700">{fmtDualMoney(totalSemua, currency)}</td>
-                  <td className="px-2 py-1.5 text-slate-700">{row.manufacturingNotes || '-'}</td>
                   <td className="px-2 py-1.5">
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => onOpenDetail?.(row)} className="rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100"><Eye className="h-3.5 w-3.5" /></button>
-                      {onAddChildUnder && <button type="button" onClick={() => onAddChildUnder(row.id)} disabled={isReadOnly} className={`rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100 ${disableClass}`}><Plus className="h-3.5 w-3.5" /></button>}
-                      {onAddRowAbove && <button type="button" onClick={() => onAddRowAbove(row.id)} disabled={isReadOnly} className={`rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100 ${disableClass}`}><Layers3 className="h-3.5 w-3.5" /></button>}
-                      <button type="button" onClick={() => removeBomRow(row.id)} disabled={isReadOnly} className={`rounded-md border border-red-300 p-1 text-red-600 hover:bg-red-50 ${disableClass}`}><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
+                    <input
+                      type="number"
+                      value={row.biayaSatuan ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { biayaSatuan: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder="0"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      type="number"
+                      value={row.totalManufactureCost ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { totalManufactureCost: event.target.value })}
+                      className={CELL_INPUT_NUM}
+                      placeholder={biayaOperasi > 0 ? String(Math.round(biayaOperasi)) : '0'}
+                    />
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-bold text-emerald-700">{fmtDualMoney(totalSemua, currency)}</td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      value={row.manufacturingNotes ?? ''}
+                      onChange={(event) => updateBomRow(row.id, { manufacturingNotes: event.target.value })}
+                      className={CELL_INPUT}
+                      placeholder="Notes"
+                     
+                    />
                   </td>
                 </tr>
               );
@@ -518,7 +666,8 @@ export function ComponentsTable({
               </td>
             </tr>
           </tfoot>
-        </table>
+          </table>
+        </div>
       </div>
 
       {treatmentModal && (
@@ -714,4 +863,5 @@ export function ComponentsTable({
     </div>
   );
 }
+
 

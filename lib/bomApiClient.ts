@@ -1,6 +1,8 @@
 import type { BomMetadata, BomRow, HardwareRow, Operation, PackingInfo, PackingRow } from '@/types';
 import { computeSummary, recomputeRow } from '@/lib/calculations';
 import { normalizeBomRow } from '@/lib/normalizeBomRow';
+import { validateBomForSave } from '@/lib/bomValidation';
+import { computePricingFromMetadata } from '@/lib/pricing';
 
 export type BomStatus = 'draft' | 'submitted' | 'approved' | 'final' | 'archived';
 export type ProductType = 'Standard' | 'Custom' | 'Export' | 'OEM';
@@ -251,6 +253,17 @@ function num(value: unknown): number {
   return Number.parseFloat(String(value ?? 0)) || 0;
 }
 
+function toBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') return true;
+    if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === '') return false;
+  }
+  if (typeof value === 'number') return value === 1;
+  return false;
+}
+
 function toIso(value: unknown, fallback = ''): string {
   if (!value) return fallback;
   const d = new Date(String(value));
@@ -300,6 +313,8 @@ function normalizeMetadata(input: Partial<BomMetadata> | undefined, codeFallback
     defaultVersi: Boolean(input?.defaultVersi),
     bomQuantity: String(input?.bomQuantity ?? '1'),
     bomUnit: String(input?.bomUnit ?? 'EA'),
+    markupPercent: String(input?.markupPercent ?? '16.67'),
+    usdRate: String(input?.usdRate ?? '16000'),
     leadTime: String(input?.leadTime ?? ''),
     effectiveDate: String(input?.effectiveDate ?? ''),
     expiryDate: String(input?.expiryDate ?? ''),
@@ -476,7 +491,7 @@ function makeVersion(input: {
     versionId: input.versionId ? String(input.versionId) : uid('vref'),
     version: String(input.version || '1.0'),
     status,
-    isImmutable: Boolean(input.isImmutable) || status === 'final' || status === 'archived',
+    isImmutable: toBoolean(input.isImmutable) || status === 'final' || status === 'archived',
     createdAt,
     updatedAt,
     createdBy: String(input.createdBy ?? 'ui-user'),
@@ -510,7 +525,7 @@ function normalizeVersion(raw: any, fallbackCode: string, fallbackName: string, 
     parentVersionId: raw?.parentVersionId == null ? null : String(raw.parentVersionId),
     createdAt: raw?.createdAt ? String(raw.createdAt) : undefined,
     updatedAt: raw?.updatedAt ? String(raw.updatedAt) : undefined,
-    isImmutable: Boolean(raw?.isImmutable),
+    isImmutable: toBoolean(raw?.isImmutable),
     snapshot: makeSnapshot({
       code: fallbackCode,
       name: fallbackName,
@@ -576,7 +591,15 @@ function readDocuments(): LocalDocument[] {
 }
 
 function writeDocuments(docs: LocalDocument[]): void {
-  getStorage().setItem(DOCS_KEY, JSON.stringify(docs));
+  try {
+    getStorage().setItem(DOCS_KEY, JSON.stringify(docs));
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      throw new Error('Penyimpanan browser penuh. Hapus sebagian data lama atau lakukan export terlebih dahulu.');
+    }
+    if (error instanceof Error) throw error;
+    throw new Error('Gagal menyimpan data BOM ke localStorage');
+  }
 }
 
 function getCurrentVersion(doc: LocalDocument): BomVersionDetail {
@@ -703,6 +726,7 @@ function encodeBase64(text: string): string {
 }
 
 function buildCsv(version: BomVersionDetail, doc: LocalDocument): string {
+  const pricing = computePricingFromMetadata(version.costSummary.grandTotal, version.metadata);
   const header = ['No', 'Part Code', 'Description', 'Qty', 'Scrap%', 'Qty Actual', 'Material Cost', 'Manufacture Cost'];
   const rows = version.bomRows.map((row) => {
     const qty = num(row.qty);
@@ -727,6 +751,11 @@ function buildCsv(version: BomVersionDetail, doc: LocalDocument): string {
     `BOM Name,${doc.name}`,
     `Version,${version.version}`,
     `Status,${version.status.toUpperCase()}`,
+    `COGS,${pricing.cogs.toFixed(2)}`,
+    `Markup Percent,${pricing.markupPercent.toFixed(2)}`,
+    `Selling Price,${pricing.sellingPrice.toFixed(2)}`,
+    `Margin Percent,${pricing.marginPercent.toFixed(2)}`,
+    `Selling Price (USD),${pricing.sellingPriceUsd.toFixed(2)}`,
     '',
     header.join(','),
     ...rows.map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')),
@@ -734,6 +763,7 @@ function buildCsv(version: BomVersionDetail, doc: LocalDocument): string {
 }
 
 function buildPdfText(version: BomVersionDetail, doc: LocalDocument): string {
+  const pricing = computePricingFromMetadata(version.costSummary.grandTotal, version.metadata);
   const lines = [
     'BOM EXPORT',
     `WATERMARK: ${version.status.toUpperCase()}`,
@@ -749,6 +779,11 @@ function buildPdfText(version: BomVersionDetail, doc: LocalDocument): string {
     `HARDWARE: ${version.costSummary.hardware.toFixed(2)}`,
     `PACKING: ${version.costSummary.packing.toFixed(2)}`,
     `GRAND TOTAL: ${version.costSummary.grandTotal.toFixed(2)}`,
+    `COGS: ${pricing.cogs.toFixed(2)}`,
+    `MARKUP %: ${pricing.markupPercent.toFixed(2)}`,
+    `SELLING PRICE: ${pricing.sellingPrice.toFixed(2)}`,
+    `MARGIN %: ${pricing.marginPercent.toFixed(2)}`,
+    `SELLING PRICE USD: ${pricing.sellingPriceUsd.toFixed(2)}`,
   ];
   return lines.join('\n');
 }
@@ -851,6 +886,15 @@ class BomApiClient {
         ? { ...current.packingInfo, ...payload.packingInfo }
         : current.packingInfo,
     });
+    const validation = validateBomForSave({
+      metadata: snapshot.metadata,
+      bomRows: snapshot.bomRows,
+      packingRows: snapshot.packingRows,
+      packingInfo: snapshot.packingInfo,
+    });
+    if (!validation.valid) {
+      throw new Error(validation.issues[0]?.message || 'Data BOM belum valid');
+    }
 
     const nextCode = sanitizeCode(snapshot.metadata.productCode || doc.code);
     const nextName = String(snapshot.metadata.productName || doc.name).trim() || doc.name;
@@ -1009,6 +1053,13 @@ class BomApiClient {
     const { doc, index } = this.findDocOrThrow(docs, id);
     const current = getCurrentVersion(doc);
     if (current.status !== 'approved') throw new Error('Only approved version can be finalized');
+    const validation = validateBomForSave({
+      metadata: current.metadata,
+      bomRows: current.bomRows,
+      packingRows: current.packingRows,
+      packingInfo: current.packingInfo,
+    });
+    if (!validation.valid) throw new Error(validation.issues[0]?.message || 'Data BOM belum valid untuk finalisasi');
     const updated = { ...current, status: 'final' as BomStatus, isImmutable: true, updatedAt: nowIso() };
     doc.versions = doc.versions.map((v) => (v.id === updated.id ? updated : v));
     doc.updatedAt = nowIso();

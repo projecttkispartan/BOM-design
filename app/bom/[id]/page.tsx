@@ -8,6 +8,8 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { normalizeBomRow } from '@/lib/normalizeBomRow';
 import { recomputeRow } from '@/lib/calculations';
 import { SAMPLE_PRODUCTS, defaultPackingInfo } from '@/lib/initialState';
+import { validateBomForSave } from '@/lib/bomValidation';
+import { getLocalStoragePressure } from '@/lib/storageHealth';
 import type { BomRow, BomMetadata, CatalogItem } from '@/types';
 import { BomConfigHeader } from '@/components/BomConfigHeader';
 import { ComponentsTable } from '@/components/ComponentsTable';
@@ -18,6 +20,7 @@ import { DetailDrawer } from '@/components/DetailDrawer';
 import { CatalogPanel } from '@/components/CatalogPanel';
 import { OperationsTable } from '@/components/OperationsTable';
 import { PackingTable } from '@/components/PackingTable';
+import { CalculationScenarioView } from '@/components/CalculationScenarioView';
 import { VersionBar } from '@/components/VersionBar';
 import { VersionDiffModal } from '@/components/VersionDiffModal';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -50,26 +53,6 @@ function getClientUserId(): string {
 
 function canReview(role: string): boolean {
   return role === 'owner' || role === 'supervisor';
-}
-
-function hasMetadataValidationErrors(meta: BomMetadata): boolean {
-  if (!meta.productCode?.trim()) return true;
-  if (!meta.productName?.trim()) return true;
-  if (!meta.itemType?.trim()) return true;
-  if (!meta.productType?.trim()) return true;
-  if (!meta.customer?.trim()) return true;
-  if (!meta.buyerCode?.trim()) return true;
-  if (!meta.leadTime?.trim()) return true;
-  if ((parseFloat(meta.bomQuantity || '0') || 0) <= 0) return true;
-  if ((parseFloat(meta.itemWidth || '0') || 0) <= 0) return true;
-  if ((parseFloat(meta.itemDepth || '0') || 0) <= 0) return true;
-  if ((parseFloat(meta.itemHeight || '0') || 0) <= 0) return true;
-  if (meta.effectiveDate && meta.expiryDate) {
-    const effDate = new Date(meta.effectiveDate);
-    const expDate = new Date(meta.expiryDate);
-    if (expDate <= effDate) return true;
-  }
-  return false;
 }
 
 function downloadBase64File(file: { name: string; mimeType: string; contentBase64: string }) {
@@ -139,6 +122,7 @@ export default function BomDetailPage() {
     severity: 'success',
   });
   const [saveValidationToken, setSaveValidationToken] = useState(0);
+  const storageWarnedRef = useRef(false);
 
   const unsaved = useUnsavedChanges({ pageTitle: 'BoM' });
   const currentUndoState = useMemo<UndoState>(() => ({ bomRows, metadata }), [bomRows, metadata]);
@@ -154,6 +138,17 @@ export default function BomDetailPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast((value) => ({ ...value, open: false })), 3200);
   }, []);
+
+  const checkStoragePressure = useCallback(() => {
+    if (storageWarnedRef.current) return;
+    const pressure = getLocalStoragePressure();
+    if (!pressure || !pressure.isHigh) return;
+    storageWarnedRef.current = true;
+    showToast(
+      `Penyimpanan browser terpakai ${pressure.usagePercent}%. Disarankan export dan bersihkan data lama.`,
+      'warning',
+    );
+  }, [showToast]);
 
   const currentVersion = useMemo(() => {
     if (!document) return null;
@@ -193,13 +188,14 @@ export default function BomDetailPage() {
       const usage = await bomApiClient.getUsedInWo(docId).catch(() => ({ count: 0 }));
       setUsedInWoCount(usage.count || 0);
       setRole(getClientRole());
+      checkStoragePressure();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Gagal memuat BOM', 'error');
       router.push('/');
     } finally {
       setLoading(false);
     }
-  }, [applyVersionState, docId, router, showToast]);
+  }, [applyVersionState, checkStoragePressure, docId, router, showToast]);
 
   useEffect(() => {
     loadDocument();
@@ -228,8 +224,14 @@ export default function BomDetailPage() {
       return;
     }
     setSaveValidationToken((value) => value + 1);
-    if (hasMetadataValidationErrors(metadata)) {
-      showToast('Lengkapi field wajib pada informasi produk sebelum simpan', 'warning');
+    const validation = validateBomForSave({
+      metadata,
+      bomRows,
+      packingRows,
+      packingInfo,
+    });
+    if (!validation.valid) {
+      showToast(validation.issues[0]?.message || 'Data BOM belum valid', 'warning');
       return;
     }
     if (usedInWoCount > 0) {
@@ -254,6 +256,7 @@ export default function BomDetailPage() {
       applyVersionState(updated);
       unsaved.markSaved();
       setLastSaved(new Date());
+      checkStoragePressure();
       showToast('BOM berhasil disimpan');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Gagal menyimpan BOM', 'error');
@@ -269,6 +272,7 @@ export default function BomDetailPage() {
     operations,
     packingInfo,
     packingRows,
+    checkStoragePressure,
     showToast,
     unsaved,
     usedInWoCount,
@@ -322,6 +326,16 @@ export default function BomDetailPage() {
 
   const handleFinalize = useCallback(async () => {
     if (!document) return;
+    const validation = validateBomForSave({
+      metadata,
+      bomRows,
+      packingRows,
+      packingInfo,
+    });
+    if (!validation.valid) {
+      showToast(validation.issues[0]?.message || 'Data BOM belum valid untuk finalisasi', 'warning');
+      return;
+    }
     try {
       await bomApiClient.finalize(document.id);
       await reloadAfterWorkflow();
@@ -329,7 +343,7 @@ export default function BomDetailPage() {
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Gagal finalize', 'error');
     }
-  }, [document, reloadAfterWorkflow, showToast]);
+  }, [bomRows, document, metadata, packingInfo, packingRows, reloadAfterWorkflow, showToast]);
 
   const handleExport = useCallback(async () => {
     if (!document) return;
@@ -360,7 +374,6 @@ export default function BomDetailPage() {
 
   const updateBomRowWithUndo = useCallback(
     (id: string, updates: Partial<BomRow>) => {
-      if (isReadOnly) return;
       unsaved.markChanged();
       undoable.execute((previous) => ({
         ...previous,
@@ -370,7 +383,7 @@ export default function BomDetailPage() {
         }),
       }));
     },
-    [isReadOnly, undoable, unsaved],
+    [undoable, unsaved],
   );
 
   const removeBomRowWithUndo = useCallback(
@@ -655,7 +668,7 @@ export default function BomDetailPage() {
           />
           <div className="flex-1 flex flex-col min-h-0 bg-white border-t border-slate-200 overflow-hidden">
             <div className="flex border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
-              {['components', 'operations', 'packing', 'miscellaneous'].map((tab) => (
+              {['components', 'operations', 'packing', 'miscellaneous', 'scenario'].map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -664,7 +677,7 @@ export default function BomDetailPage() {
                     activeTab === tab ? 'text-sky-700 border-b-2 border-sky-600 bg-white' : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {tab === 'packing' ? 'Packing' : tab}
+                  {tab === 'packing' ? 'Packing' : tab === 'scenario' ? 'Scenario Kalkulasi' : tab}
                 </button>
               ))}
             </div>
@@ -740,6 +753,14 @@ export default function BomDetailPage() {
                     removeHardwareRow={removeHardwareRowWithDirty}
                   />
                 </div>
+              )}
+              {activeTab === 'scenario' && (
+                <CalculationScenarioView
+                  metadata={metadata}
+                  bomRows={bomRows}
+                  hardwareRows={hardwareRows}
+                  packingRows={packingRows}
+                />
               )}
             </div>
           </div>
